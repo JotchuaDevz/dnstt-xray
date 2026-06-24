@@ -202,16 +202,13 @@ install_dnstt() {
         return
     fi
     
-    # Detener systemd-resolved
+    # Detener systemd-resolved de forma segura (sin bloqueos)
     echo -e "${C_GREEN}⚙️ Liberando puerto 53 (deteniendo systemd-resolved)...${C_RESET}"
-    {
-        systemctl stop systemd-resolved >/dev/null 2>&1 || true
-        systemctl disable systemd-resolved >/dev/null 2>&1 || true
-        rm -f /etc/resolv.conf
-        echo "nameserver 8.8.8.8" | tee /etc/resolv.conf > /dev/null
-    } &
-    local resolve_pid=$!
-    show_spinner $resolve_pid "Deteniendo systemd-resolved..."
+    timeout 5 systemctl stop systemd-resolved 2>/dev/null || true
+    systemctl disable systemd-resolved 2>/dev/null || true
+    rm -f /etc/resolv.conf 2>/dev/null
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null || true
+    echo -e "${C_GREEN}✅ Puerto 53 liberado y DNS configurado.${C_RESET}"
     
     # Verificar puerto 53
     echo -e "\n${C_BLUE}🔎 Verificando puerto 53 (UDP)...${C_RESET}"
