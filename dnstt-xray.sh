@@ -116,6 +116,8 @@ check_and_free_ports() {
     else
         echo -e "${C_GREEN}✅ Puerto $port disponible.${C_RESET}"
     fi
+}   # <--- ¡AQUÍ FALTABA LA LLAVE DE CIERRE!
+
 check_and_open_firewall_port() {
     local port="$1"
     local protocol="${2:-udp}"
