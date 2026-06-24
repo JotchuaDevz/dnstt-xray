@@ -39,53 +39,6 @@ show_spinner() {
     printf "\r${C_GREEN}✅${C_RESET} %s - Completado\n" "$message"
 }
 
-show_progress_bar() {
-    local current=$1
-    local total=$2
-    local message=$3
-    local width=40
-    local percentage=$((current * 100 / total))
-    local filled=$((current * width / total))
-    printf "\r${C_CYAN}%s${C_RESET} ${C_WHITE}[" "$message"
-    for ((i=0; i<filled; i++)); do printf "█"; done
-    for ((i=filled; i<width; i++)); do printf "░"; done
-    printf "]${C_RESET} ${C_YELLOW}%d%%${C_RESET}" "$percentage"
-}
-
-animate_text() {
-    local text=$1
-    local color=$2
-    for ((i=0; i<${#text}; i++)); do
-        printf "${color}%s${C_RESET}" "${text:$i:1}"
-        sleep 0.05
-    done
-    echo
-}
-
-show_step() {
-    local step_num=$1
-    local step_text=$2
-    echo
-    echo -e "${C_BOLD}${C_BLUE}╭─ Paso $step_num:${C_RESET}${C_RESET}"
-    echo -e "${C_BLUE}│${C_RESET} $step_text"
-    echo -e "${C_BLUE}╰─${C_RESET}"
-}
-
-show_section() {
-    local section=$1
-    echo
-    echo -e "${C_BOLD}${C_CYAN}▶ $section${C_RESET}"
-}
-
-_is_valid_ipv4() {
-    local ip=$1
-    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 check_and_free_ports() {
     local port="$1"
     echo -e "\n${C_BLUE}🔎 Verificando si el puerto $port está disponible...${C_RESET}"
@@ -171,8 +124,10 @@ show_dnstt_details() {
         echo -e "${C_GREEN}            📡 DETALLES DE CONEXIÓN DNSTT             ${C_RESET}"
         echo -e "${C_GREEN}=====================================================${C_RESET}"
         echo -e "\n${C_WHITE}Información de conexión:${C_RESET}"
+        echo -e "  - ${C_CYAN}Dominio NS:${C_RESET} ${C_YELLOW}${NS_DOMAIN:-No definido}${C_RESET}"
         echo -e "  - ${C_CYAN}Dominio Túnel:${C_RESET} ${C_YELLOW}${TUNNEL_DOMAIN:-No definido}${C_RESET}"
-        echo -e "  - ${C_CYAN}Clave Pública:${C_RESET} ${C_YELLOW}${PUBLIC_KEY:-No generada}${C_RESET}"
+        echo -e "  - ${C_CYAN}Clave Pública (SlowDNS):${C_RESET} ${C_YELLOW}${PUBLIC_KEY:-No generada}${C_RESET}"
+        echo -e "  - ${C_CYAN}Puerto público:${C_RESET} ${C_YELLOW}53 (UDP)${C_RESET}"
         if [[ -n "${FORWARD_DESC:-}" ]]; then
             echo -e "  - ${C_CYAN}Reenviando a:${C_RESET} ${C_YELLOW}$FORWARD_DESC${C_RESET}"
         else
@@ -181,12 +136,9 @@ show_dnstt_details() {
         if [[ -n "${MTU_VALUE:-}" ]]; then
             echo -e "  - ${C_CYAN}Valor MTU:${C_RESET} ${C_YELLOW}$MTU_VALUE${C_RESET}"
         fi
-        if [[ "${DNSTT_RECORDS_MANAGED:-false}" == "false" && -n "${NS_DOMAIN:-}" ]]; then
-             echo -e "  - ${C_CYAN}Registro NS:${C_RESET} ${C_YELLOW}$NS_DOMAIN${C_RESET}"
-        fi
-        echo -e "\n${C_DIM}Usa estos detalles en tu configuración del cliente.${C_RESET}"
+        echo -e "\n${C_DIM}Usa estos datos en tu cliente (ej. Hex Tunnel).${C_RESET}"
     else
-        echo -e "\n${C_YELLOW}ℹ️ Archivo de configuración no encontrado.${C_RESET}"
+        echo -e "\n${C_YELLOW}ℹ️ No hay configuración guardada. Instala primero DNSTT.${C_RESET}"
     fi
 }
 
@@ -210,7 +162,7 @@ install_dnstt() {
     echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null || true
     echo -e "${C_GREEN}✅ Puerto 53 liberado y DNS configurado.${C_RESET}"
 
-    # Verificar puerto 53 con protección de salida
+    # Verificar puerto 53
     echo -e "\n${C_BLUE}🔎 Verificando puerto 53 (UDP)...${C_RESET}"
     if ss -lunp 2>/dev/null | grep -q ':53 '; then
         echo -e "${C_YELLOW}⚠️ El puerto 53 está en uso.${C_RESET}"
@@ -337,6 +289,19 @@ install_dnstt() {
     local PUBLIC_KEY
     PUBLIC_KEY=$(cat "$DNSTT_KEYS_DIR/server.pub")
 
+    # Guardar configuración (IMPORTANTE: después de tener la clave pública)
+    echo -e "\n${C_BLUE}💾 Guardando configuración...${C_RESET}"
+    sleep 0.3
+    cat > "$DNSTT_CONFIG_FILE" <<- EOF
+NS_DOMAIN="$NS_DOMAIN"
+TUNNEL_DOMAIN="$TUNNEL_DOMAIN"
+PUBLIC_KEY="$PUBLIC_KEY"
+FORWARD_DESC="$forward_desc"
+DNSTT_RECORDS_MANAGED="false"
+MTU_VALUE="$mtu_value"
+EOF
+    echo -e "${C_GREEN}✅ Configuración guardada${C_RESET}"
+
     # Crear servicio systemd (here-document con placeholders)
     echo -e "\n${C_BLUE}📝 Creando configuración del servicio...${C_RESET}"
     sleep 0.5
@@ -359,19 +324,6 @@ EOF
     sed -i "s|__TUNNEL_DOMAIN__|$TUNNEL_DOMAIN|g" "$DNSTT_SERVICE_FILE"
     sed -i "s|__FORWARD_TARGET__|$FORWARD_TARGET|g" "$DNSTT_SERVICE_FILE"
     echo -e "${C_GREEN}✅ Servicio systemd configurado${C_RESET}"
-
-    # Guardar configuración
-    echo -e "\n${C_BLUE}💾 Guardando configuración...${C_RESET}"
-    sleep 0.3
-    cat > "$DNSTT_CONFIG_FILE" <<- EOF
-NS_DOMAIN="$NS_DOMAIN"
-TUNNEL_DOMAIN="$TUNNEL_DOMAIN"
-PUBLIC_KEY="$PUBLIC_KEY"
-FORWARD_DESC="$forward_desc"
-DNSTT_RECORDS_MANAGED="false"
-MTU_VALUE="$mtu_value"
-EOF
-    echo -e "${C_GREEN}✅ Configuración guardada${C_RESET}"
 
     # Iniciar servicio
     echo -e "\n${C_BLUE}🚀 Iniciando servicios...${C_RESET}"
@@ -488,66 +440,71 @@ install_command_alias() {
 }
 
 show_status() {
+    clear
     echo -e "\n${C_BOLD}${C_CYAN}╔════════════════════════════════════════════════════╗${C_RESET}"
     echo -e "${C_BOLD}${C_CYAN}║      📡 ESTADO DE DNSTT - HexSlowDNSV1 📡         ║${C_RESET}"
     echo -e "${C_BOLD}${C_CYAN}╚════════════════════════════════════════════════════╝${C_RESET}\n"
 
     if systemctl is-active --quiet dnstt.service; then
         echo -e "${C_GREEN}✅ DNSTT está ${C_BOLD}ACTIVO${C_RESET}${C_GREEN} y funcionando.${C_RESET}\n"
-        show_dnstt_details
     else
         echo -e "${C_RED}❌ DNSTT no está activo.${C_RESET}\n"
     fi
+
+    show_dnstt_details
+
+    echo
+    read -r -p "Presiona Enter para volver al menú..."
 }
 
 show_menu() {
-    clear
-    echo -e "\n${C_BOLD}${C_CYAN}╔════════════════════════════════════════════════════╗${C_RESET}"
-    echo -e "${C_BOLD}${C_CYAN}║     🔧 HexSlowDNSV1 - DNS Tunnel Manager 🔧       ║${C_RESET}"
-    echo -e "${C_BOLD}${C_CYAN}╚════════════════════════════════════════════════════╝${C_RESET}\n"
+    while true; do
+        clear
+        echo -e "\n${C_BOLD}${C_CYAN}╔════════════════════════════════════════════════════╗${C_RESET}"
+        echo -e "${C_BOLD}${C_CYAN}║     🔧 HexSlowDNSV1 - DNS Tunnel Manager 🔧       ║${C_RESET}"
+        echo -e "${C_BOLD}${C_CYAN}╚════════════════════════════════════════════════════╝${C_RESET}\n"
 
-    printf "  ${C_GREEN}[1]${C_RESET} 🚀 Instalar DNSTT\n"
-    printf "  ${C_GREEN}[2]${C_RESET} 🗑️  Desinstalar DNSTT\n"
-    printf "  ${C_GREEN}[3]${C_RESET} 📊 Ver estado/detalles\n"
-    printf "  ${C_GREEN}[4]${C_RESET} 🔄 Reiniciar servicio\n"
-    printf "  ${C_CYAN}[5]${C_RESET} 📱 Descargar Hex Tunnel (Android)\n"
-    printf "  ${C_CYAN}[6]${C_RESET} 📦 Instalar comando 'dnstt-hex'\n"
-    printf "  ${C_RED}  [0]${C_RESET} ❌ Salir\n\n"
+        printf "  ${C_GREEN}[1]${C_RESET} 🚀 Instalar DNSTT\n"
+        printf "  ${C_GREEN}[2]${C_RESET} 🗑️  Desinstalar DNSTT\n"
+        printf "  ${C_GREEN}[3]${C_RESET} 📊 Ver estado/detalles\n"
+        printf "  ${C_GREEN}[4]${C_RESET} 🔄 Reiniciar servicio\n"
+        printf "  ${C_CYAN}[5]${C_RESET} 📱 Descargar Hex Tunnel (Android)\n"
+        printf "  ${C_CYAN}[6]${C_RESET} 📦 Instalar comando 'dnstt-hex'\n"
+        printf "  ${C_RED}  [0]${C_RESET} ❌ Salir\n\n"
 
-    read -r -p "👉 Selecciona opción: " choice
+        read -r -p "👉 Selecciona opción: " choice
 
-    case $choice in
-        1) install_dnstt ;;
-        2) uninstall_dnstt ;;
-        3) show_status ;;
-        4)
-            if [ -f "$DNSTT_SERVICE_FILE" ]; then
-                systemctl restart dnstt.service
-                echo -e "\n${C_GREEN}✅ DNSTT reiniciado.${C_RESET}\n"
-                sleep 2
-            else
-                echo -e "\n${C_RED}❌ DNSTT no está instalado.${C_RESET}\n"
-                sleep 2
-            fi
-            ;;
-        5)
-            clear
-            echo -e "${C_BOLD}${C_CYAN}╔════════════════════════════════════════════════════╗${C_RESET}"
-            echo -e "${C_BOLD}${C_CYAN}║           📱 DESCARGAR HEX TUNNEL 📱              ║${C_RESET}"
-            echo -e "${C_BOLD}${C_CYAN}╚════════════════════════════════════════════════════╝${C_RESET}\n"
-            echo -e "${C_YELLOW}🔗 Google Play Store:${C_RESET}"
-            echo -e "   ${C_WHITE}https://play.google.com/store/apps/details?id=com.hex.tunnel.jotchuast${C_RESET}\n"
-            echo -e "${C_CYAN}Características:${C_RESET}"
-            echo -e "   • Multi-protocolo VPN (SSH, V2Ray, SlowDNS, Hysteria)"
-            echo -e "   • Interfaz nativa Android\n"
-            read -r -p "Presiona Enter para volver al menú..."
-            ;;
-        6) install_command_alias ;;
-        0) echo -e "\n${C_GREEN}¡Hasta luego!${C_RESET}\n"; exit 0 ;;
-        *) echo -e "\n${C_RED}❌ Opción inválida.${C_RESET}\n"; sleep 1 ;;
-    esac
-
-    show_menu
+        case $choice in
+            1) install_dnstt ;;
+            2) uninstall_dnstt ;;
+            3) show_status ;;
+            4)
+                if [ -f "$DNSTT_SERVICE_FILE" ]; then
+                    systemctl restart dnstt.service
+                    echo -e "\n${C_GREEN}✅ DNSTT reiniciado.${C_RESET}\n"
+                    sleep 2
+                else
+                    echo -e "\n${C_RED}❌ DNSTT no está instalado.${C_RESET}\n"
+                    sleep 2
+                fi
+                ;;
+            5)
+                clear
+                echo -e "${C_BOLD}${C_CYAN}╔════════════════════════════════════════════════════╗${C_RESET}"
+                echo -e "${C_BOLD}${C_CYAN}║           📱 DESCARGAR HEX TUNNEL 📱              ║${C_RESET}"
+                echo -e "${C_BOLD}${C_CYAN}╚════════════════════════════════════════════════════╝${C_RESET}\n"
+                echo -e "${C_YELLOW}🔗 Google Play Store:${C_RESET}"
+                echo -e "   ${C_WHITE}https://play.google.com/store/apps/details?id=com.hex.tunnel.jotchuast${C_RESET}\n"
+                echo -e "${C_CYAN}Características:${C_RESET}"
+                echo -e "   • Multi-protocolo VPN (SSH, V2Ray, SlowDNS, Hysteria)"
+                echo -e "   • Interfaz nativa Android\n"
+                read -r -p "Presiona Enter para volver al menú..."
+                ;;
+            6) install_command_alias ;;
+            0) echo -e "\n${C_GREEN}¡Hasta luego!${C_RESET}\n"; exit 0 ;;
+            *) echo -e "\n${C_RED}❌ Opción inválida.${C_RESET}\n"; sleep 1 ;;
+        esac
+    done
 }
 
 show_menu
