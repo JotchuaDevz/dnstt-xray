@@ -1,7 +1,6 @@
 #!/bin/bash
-# HexSlowDNSV1 - DNSTT (DNS Tunnel) Manager (COMPLETO Y CORREGIDO)
-# Para Hex Tunnel VPN - Android App
-# https://play.google.com/store/apps/details?id=com.hex.tunnel.jotchuast
+# HexSlowDNSV1 - DNSTT (DNS Tunnel) Manager (versión final corregida)
+# Muestra correctamente toda la info y no se cierra solo.
 
 set -o pipefail
 
@@ -154,7 +153,6 @@ install_dnstt() {
         return
     fi
 
-    # Detener systemd-resolved de forma segura (sin bloqueos)
     echo -e "${C_GREEN}⚙️ Liberando puerto 53 (deteniendo systemd-resolved)...${C_RESET}"
     timeout 5 systemctl stop systemd-resolved 2>/dev/null || true
     systemctl disable systemd-resolved 2>/dev/null || true
@@ -162,7 +160,6 @@ install_dnstt() {
     echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null || true
     echo -e "${C_GREEN}✅ Puerto 53 liberado y DNS configurado.${C_RESET}"
 
-    # Verificar puerto 53
     echo -e "\n${C_BLUE}🔎 Verificando puerto 53 (UDP)...${C_RESET}"
     if ss -lunp 2>/dev/null | grep -q ':53 '; then
         echo -e "${C_YELLOW}⚠️ El puerto 53 está en uso.${C_RESET}"
@@ -185,7 +182,6 @@ install_dnstt() {
 
     check_and_open_firewall_port 53 udp || return
 
-    # Elegir destino del reenvío
     local forward_port=""
     local forward_desc=""
     echo -e "\n${C_BLUE}¿A dónde debería reenviar DNSTT el tráfico?${C_RESET}"
@@ -242,7 +238,6 @@ install_dnstt() {
         echo -e "${C_YELLOW}ℹ️ Usando MTU por defecto.${C_RESET}"
     fi
 
-    # Descargar binario
     echo -e "\n${C_BLUE}📥 Descargando binario DNSTT precompilado...${C_RESET}"
     local arch
     arch=$(uname -m)
@@ -271,7 +266,6 @@ install_dnstt() {
     chmod +x "$DNSTT_BINARY"
     echo -e "${C_GREEN}✅ Binario descargado: ${C_YELLOW}$(du -h "$DNSTT_BINARY" | cut -f1)${C_RESET}"
 
-    # Generar claves
     echo -e "${C_BLUE}🔐 Generando claves criptográficas...${C_RESET}"
     mkdir -p "$DNSTT_KEYS_DIR"
     {
@@ -289,7 +283,6 @@ install_dnstt() {
     local PUBLIC_KEY
     PUBLIC_KEY=$(cat "$DNSTT_KEYS_DIR/server.pub")
 
-    # Guardar configuración (IMPORTANTE: después de tener la clave pública)
     echo -e "\n${C_BLUE}💾 Guardando configuración...${C_RESET}"
     sleep 0.3
     cat > "$DNSTT_CONFIG_FILE" <<- EOF
@@ -302,7 +295,6 @@ MTU_VALUE="$mtu_value"
 EOF
     echo -e "${C_GREEN}✅ Configuración guardada${C_RESET}"
 
-    # Crear servicio systemd (here-document con placeholders)
     echo -e "\n${C_BLUE}📝 Creando configuración del servicio...${C_RESET}"
     sleep 0.5
     cat > "$DNSTT_SERVICE_FILE" <<- 'EOF'
@@ -325,7 +317,6 @@ EOF
     sed -i "s|__FORWARD_TARGET__|$FORWARD_TARGET|g" "$DNSTT_SERVICE_FILE"
     echo -e "${C_GREEN}✅ Servicio systemd configurado${C_RESET}"
 
-    # Iniciar servicio
     echo -e "\n${C_BLUE}🚀 Iniciando servicios...${C_RESET}"
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable dnstt.service 2>/dev/null || true
@@ -365,6 +356,8 @@ EOF
         echo -e "\n${C_RED}❌ Error: El servicio DNSTT falló al iniciar.${C_RESET}"
         journalctl -u dnstt.service -n 15 --no-pager
     fi
+    echo
+    read -r -p "Presiona Enter para continuar..."
 }
 
 uninstall_dnstt() {
@@ -374,12 +367,14 @@ uninstall_dnstt() {
 
     if [ ! -f "$DNSTT_SERVICE_FILE" ]; then
         echo -e "${C_YELLOW}ℹ️ DNSTT no parece estar instalado.${C_RESET}"
+        read -r -p "Presiona Enter para volver..."
         return
     fi
 
     read -r -p "👉 ¿Desinstalar DNSTT completamente? (y/n): " confirm
     if [[ "$confirm" != "y" ]]; then
         echo -e "\n${C_YELLOW}❌ Desinstalación cancelada.${C_RESET}"
+        read -r -p "Presiona Enter para volver..."
         return
     fi
 
@@ -408,6 +403,7 @@ uninstall_dnstt() {
     chattr -i /etc/resolv.conf &>/dev/null || true
 
     echo -e "\n${C_GREEN}✅ DNSTT ha sido desinstalado correctamente.${C_RESET}"
+    read -r -p "Presiona Enter para volver..."
 }
 
 install_command_alias() {
@@ -419,6 +415,7 @@ install_command_alias() {
     if [ -f "/usr/local/bin/dnstt-hex" ]; then
         echo -e "${C_YELLOW}ℹ️ El comando 'dnstt-hex' ya está instalado.${C_RESET}"
         echo -e "${C_DIM}Ubicación: /usr/local/bin/dnstt-hex${C_RESET}\n"
+        read -r -p "Presiona Enter para volver..."
         return
     fi
 
